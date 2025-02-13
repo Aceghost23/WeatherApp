@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>Weather Stations with Interactive Map</title>
+
+  <!-- Leaflet & MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+
+  <!-- Leaflet & MarkerCluster JS -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      height: 100%;
+      font-family: Arial, sans-serif;
+    }
+
+    /* =========== TOP CONTROLS LEISTE =========== */
+    .top-controls {
+      width: 100%;
+      background-color: rgba(255, 255, 255, 0.95);
+      padding: 10px 20px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.2);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      z-index: 9999;
+    }
+    .top-controls h3 {
+      margin-right: 20px;
+      margin-bottom: 0;
+    }
+    .top-controls label,
+    .top-controls input,
+    .top-controls button {
+      margin-bottom: 0;
+      font-size: 14px;
+      height: 30px;
+    }
+
+    /* =========== MAP =========== */
+    #map {
+      width: 100%;
+      height: 60%; /* 60% für Karte */
+    }
+
+    /* =========== STATIONSLISTE =========== */
+    #stationsList {
+      padding: 20px;
+      height: calc(40% - 20px); /* restlicher Platz */
+      overflow-y: auto;
+    }
+    .station-table-container {
+      overflow-y: auto;
+      max-height: 300px;
+    }
+    .station-table-container table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .station-table-container th,
+    .station-table-container td {
+      padding: 10px;
+      border: 1px solid #ddd;
+    }
+    .station-table-container th {
+      background-color: #f4f4f4;
+    }
+    .station-table-container tr:hover {
+      background-color: #f1f1f1;
+    }
+
+    /* =========== LADEOVERLAY (SPINNER) =========== */
+    #loadingOverlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background-color: rgba(255,255,255,0.7);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+    }
+    .spinner {
+      border: 10px solid #f3f3f3; 
+      border-top: 10px solid #3498db; 
+      border-radius: 50%;
+      width: 60px;
+      height: 60px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0%   { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ========== LADESPINNER OVERLAY ========== -->
+  <div id="loadingOverlay">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- ========== TOP CONTROLS LEISTE ========== -->
+  <div class="top-controls">
+    <h3>Weather Station Settings</h3>
+
+    <!-- Radius -->
+    <label for="radius">Radius (km):</label>
+    <input type="number" id="radius" value="50" min="1" />
+    <button onclick="updateRadius()">Apply Radius</button>
+    <button onclick="removeRadius()">Remove Radius</button>
+
+    <!-- Koordinatensuche (Variante B) -->
+    <label for="searchLat">Lat:</label>
+    <input type="number" id="searchLat" step="0.0001" placeholder="48.7094" style="width:100px;" />
+    <label for="searchLng">Lng:</label>
+    <input type="number" id="searchLng" step="0.0001" placeholder="-94.5853" style="width:100px;" />
+    <button onclick="searchByCoordinates()">Search by Coords</button>
+  </div>
+
+  <!-- ========== MAP ========== -->
+  <div id="map"></div>
+
+  <!-- ========== STATIONSLISTE ========== -->
+  <div id="stationsList">
+    <h3>Stations</h3>
+    <div class="station-table-container">
+      <table id="stationTable" class="station-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Latitude</th>
+            <th>Longitude</th>
+            <th>Start Year</th>
+            <th>End Year</th>
+            <th>Distance (km)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // =================== LEAFLET-KARTE ===================
+    var map = L.map("map").setView([51.505, -0.09], 5);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "© OpenStreetMap contributors",
+    }).addTo(map);
+
+    // =================== GLOBALE VARS ===================
+    var markers = L.markerClusterGroup();
+    var currentTableData = [];     // Aktuelle Daten, die in der Tabelle angezeigt werden
+    var radiusActive = false;      // Ob ein Radius gesetzt ist
+    var currentRadiusCircle = null;
+    var currentCenterMarker = null;
+    var radiusKm = 0;
+
+    // =================== LADESPINNER ===================
+    function showLoading() {
+      document.getElementById("loadingOverlay").style.display = "flex";
+    }
+    function hideLoading() {
+      document.getElementById("loadingOverlay").style.display = "none";
+    }
+
+    // =================== TABELLE BEFÜLLEN ===================
+    function populateStationTable(data) {
+      console.log("📝 populateStationTable()", data.length);
+      var tableBody = document.querySelector("#stationTable tbody");
+      tableBody.innerHTML = "";
+
+      data.forEach(station => {
+        var row = document.createElement("tr");
+        row.innerHTML = `
+          <td>${station.station_id}</td>
+          <td>${station.latitude}</td>
+          <td>${station.longitude}</td>
+          <td>${station.start_year}</td>
+          <td>${station.end_year}</td>
+          <td>${station.distance ? station.distance.toFixed(2) : "-"}</td>
+        `;
+        tableBody.appendChild(row);
+      });
+    }
+
+    // =================== MARKERCLUSTER RENDERING ===================
+    function showStationsOnMap(data) {
+      console.log("📍 showStationsOnMap()", data.length);
+      markers.clearLayers();
+
+      data.forEach(station => {
+        var marker = L.marker([station.latitude, station.longitude])
+          .bindPopup(`
+            <strong>Station ID:</strong> ${station.station_id}<br>
+            <strong>Coords:</strong> ${station.latitude}, ${station.longitude}<br>
+            <strong>Years:</strong> ${station.start_year} - ${station.end_year}
+          `);
+        markers.addLayer(marker);
+      });
+
+      map.addLayer(markers);
+    }
+
+    // =================== BOUNDING BOX: MOVEEND ===================
+    map.on("moveend", () => {
+      // Nur aktualisieren, wenn KEIN Radius aktiv ist
+      if (!radiusActive) {
+        handleMapMove();
+      } else {
+        console.log("🔵 Radius ist aktiv -> kein BBox-Update");
+      }
+    });
+
+    function handleMapMove() {
+      console.log("📍 BBox: handleMapMove()");
+      showLoading();
+
+      var bounds = map.getBounds();
+      var sw = bounds.getSouthWest();
+      var ne = bounds.getNorthEast();
+
+      var url = `/stations_in_bounds?swLat=${sw.lat}&swLng=${sw.lng}&neLat=${ne.lat}&neLng=${ne.lng}`;
+      console.log("➡️ Hole bounding box Daten:", url);
+
+      fetch(url)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error("BBox-Request fehlgeschlagen");
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log("✅ Empfangen (BBox):", data.length, "Stationen");
+          currentTableData = data;           // Diese Daten sind derzeit aktiv
+          populateStationTable(data);
+          showStationsOnMap(data);
+        })
+        .catch(err => {
+          console.error("❌ Fehler beim BBox-Fetch:", err);
+        })
+        .finally(() => {
+          hideLoading();
+        });
+    }
+
+    // =================== RADIUS-FUNKTION ===================
+    function updateRadius() {
+      console.log("🔵 updateRadius()");
+      radiusKm = parseFloat(document.getElementById("radius").value);
+      radiusActive = true; // wir aktivieren den Radius-Modus
+
+      map.once("click", (e) => {
+        console.log("🟢 Radius Mittelpunkt gewählt bei:", e.latlng);
+
+        if (currentRadiusCircle) map.removeLayer(currentRadiusCircle);
+        if (currentCenterMarker) map.removeLayer(currentCenterMarker);
+
+        currentRadiusCircle = L.circle(e.latlng, {
+          radius: radiusKm * 1000,
+          color: "blue",
+          fillColor: "#add8e6",
+          fillOpacity: 0.5,
+        }).addTo(map);
+
+        currentCenterMarker = L.circleMarker(e.latlng, {
+          radius: 5,
+          color: "red",
+          fillColor: "red",
+          fillOpacity: 1
+        }).addTo(map);
+
+        // Alle Stationen aus 'currentTableData' filtern und Distanz berechnen
+        var centerLat = e.latlng.lat;
+        var centerLng = e.latlng.lng;
+
+        var filtered = currentTableData.map(st => {
+          var dist = getDistance(centerLat, centerLng, parseFloat(st.latitude), parseFloat(st.longitude));
+          return {
+            ...st,
+            distance: dist
+          };
+        }).filter(st => st.distance <= radiusKm);
+
+        // Sortieren (aufsteigend nach Distanz)
+        filtered.sort((a, b) => a.distance - b.distance);
+
+        currentTableData = filtered;
+        populateStationTable(filtered);
+        showStationsOnMap(filtered);
+      });
+
+      alert("Klicke auf die Karte, um den Mittelpunkt des Radius festzulegen.");
+    }
+
+    function removeRadius() {
+      console.log("🔵 removeRadius()");
+      radiusActive = false;
+
+      if (currentRadiusCircle) {
+        map.removeLayer(currentRadiusCircle);
+        currentRadiusCircle = null;
+      }
+      if (currentCenterMarker) {
+        map.removeLayer(currentCenterMarker);
+        currentCenterMarker = null;
+      }
+
+      // BBox erneut laden (oder Koordinatensuch-Ergebnis, falls gewünscht)
+      // Wir triggern handleMapMove => BBox
+      handleMapMove();
+    }
+
+    // =================== HAVERSINE ===================
+    function getDistance(lat1, lon1, lat2, lon2) {
+      var R = 6371; // Erdradius in km
+      var dLat = (lat2 - lat1) * Math.PI / 180;
+      var dLon = (lon2 - lon1) * Math.PI / 180;
+      var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(lat1 * Math.PI / 180) *
+              Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      return R * c;
+    }
+
+    // =================== KOORDINATEN-SUCHE ===================
+    function searchByCoordinates() {
+      var lat = parseFloat(document.getElementById("searchLat").value);
+      var lng = parseFloat(document.getElementById("searchLng").value);
+
+      if (isNaN(lat) || isNaN(lng)) {
+        alert("Bitte gültige Zahlen für Latitude und Longitude eingeben!");
+        return;
+      }
+
+      console.log("🔍 Suche Station(en) ~ Koords:", lat, lng);
+
+      // Falls ein Radius aktiv war, beenden wir ihn
+      // (dann soll die Koordinatensuche Vorrang haben)
+      removeRadius();
+
+      showLoading();
+      var url = `/search_by_coords?lat=${lat}&lng=${lng}`;
+      fetch(url)
+        .then(res => {
+          if (!res.ok) {
+            throw new Error("Fehler beim Koordinaten-Search: " + res.statusText);
+          }
+          return res.json();
+        })
+        .then(data => {
+          console.log("✅ Such-Ergebnis (Coords):", data.length, "Station(en)");
+          currentTableData = data;  // Such-Ergebnis
+          populateStationTable(data);
+          showStationsOnMap(data);
+
+          if (data.length > 0) {
+            map.setView([lat, lng], 10);
+          }
+        })
+        .catch(err => {
+          console.error("❌ Fehler bei searchByCoordinates:", err);
+          alert("Es gab einen Fehler bei der Suche (siehe Konsole).");
+        })
+        .finally(() => {
+          hideLoading();
+        });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ../  # Eine Ebene höher gehen, um Backend & Frontend zu finden
+      dockerfile: Docker/Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongodb
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/ghcnd_database
+    volumes:
+      - ../Backend:/app/Backend
+      - ../Frontend:/app/Frontend
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb_container
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+
+volumes:
+  mongo_data:
