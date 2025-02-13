@@ -32,21 +32,34 @@
       padding: 10px 20px;
       box-shadow: 0 0 5px rgba(0,0,0,0.2);
       display: flex;
+      gap: 20px;
       flex-wrap: wrap;
-      align-items: center;
-      gap: 10px;
+      align-items: flex-start; /* So werden fieldsets einheitlich oben ausgerichtet */
       z-index: 9999;
     }
-    .top-controls h3 {
-      margin-right: 20px;
-      margin-bottom: 0;
+
+    fieldset {
+      border: 1px solid #ccc;
+      padding: 10px 15px;
+      border-radius: 5px;
     }
-    .top-controls label,
-    .top-controls input,
-    .top-controls button {
-      margin-bottom: 0;
+    fieldset legend {
+      font-weight: bold;
+      padding: 0 5px;
+    }
+    fieldset label {
+      margin-right: 5px;
+    }
+    fieldset input {
+      width: 70px;
+      margin-right: 10px;
+      height: 25px;
       font-size: 14px;
+    }
+    fieldset button {
+      margin-right: 10px;
       height: 30px;
+      font-size: 14px;
     }
 
     /* =========== MAP =========== */
@@ -118,20 +131,31 @@
 
   <!-- ========== TOP CONTROLS LEISTE ========== -->
   <div class="top-controls">
-    <h3>Weather Station Settings</h3>
 
-    <!-- Radius -->
-    <label for="radius">Radius (km):</label>
-    <input type="number" id="radius" value="50" min="1" />
-    <button onclick="updateRadius()">Apply Radius</button>
-    <button onclick="removeRadius()">Remove Radius</button>
+    <!-- Feld: Radius-Einstellungen -->
+    <fieldset>
+      <legend>Radius Settings</legend>
+      <label for="radius">Radius (km):</label>
+      <input type="number" id="radius" value="50" min="1" />
+      
+      <label for="maxStations">Max Stations:</label>
+      <input type="number" id="maxStations" value="10" min="1" />
 
-    <!-- Koordinatensuche (Variante B) -->
-    <label for="searchLat">Lat:</label>
-    <input type="number" id="searchLat" step="0.0001" placeholder="48.7094" style="width:100px;" />
-    <label for="searchLng">Lng:</label>
-    <input type="number" id="searchLng" step="0.0001" placeholder="-94.5853" style="width:100px;" />
-    <button onclick="searchByCoordinates()">Search by Coords</button>
+      <button onclick="updateRadius()">Apply Radius</button>
+      <button onclick="removeRadius()">Remove Radius</button>
+    </fieldset>
+
+    <!-- Feld: Koordinaten-Suche -->
+    <fieldset>
+      <legend>Coordinate Search</legend>
+      <label for="searchLat">Lat:</label>
+      <input type="number" id="searchLat" step="0.0001" placeholder="48.7094" />
+      <label for="searchLng">Lng:</label>
+      <input type="number" id="searchLng" step="0.0001" placeholder="-94.5853"/>
+      
+      <button onclick="searchByCoordinates()">Search by Coords</button>
+    </fieldset>
+
   </div>
 
   <!-- ========== MAP ========== -->
@@ -158,6 +182,11 @@
   </div>
 
   <script>
+    /* =============== Dein bestehender Script-Code unverändert =============== 
+       (vergleiche mit deiner letzten Endversion)
+       (Siehe unten, falls du den Code nochmal brauchst)
+    */
+
     // =================== LEAFLET-KARTE ===================
     var map = L.map("map").setView([51.505, -0.09], 5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -165,15 +194,13 @@
       attribution: "© OpenStreetMap contributors",
     }).addTo(map);
 
-    // =================== GLOBALE VARS ===================
     var markers = L.markerClusterGroup();
-    var currentTableData = [];     // Aktuelle Daten, die in der Tabelle angezeigt werden
-    var radiusActive = false;      // Ob ein Radius gesetzt ist
+    var currentTableData = [];
+    var radiusActive = false;
     var currentRadiusCircle = null;
     var currentCenterMarker = null;
     var radiusKm = 0;
 
-    // =================== LADESPINNER ===================
     function showLoading() {
       document.getElementById("loadingOverlay").style.display = "flex";
     }
@@ -181,9 +208,7 @@
       document.getElementById("loadingOverlay").style.display = "none";
     }
 
-    // =================== TABELLE BEFÜLLEN ===================
     function populateStationTable(data) {
-      console.log("📝 populateStationTable()", data.length);
       var tableBody = document.querySelector("#stationTable tbody");
       tableBody.innerHTML = "";
 
@@ -201,189 +226,161 @@
       });
     }
 
-    // =================== MARKERCLUSTER RENDERING ===================
     function showStationsOnMap(data) {
-      console.log("📍 showStationsOnMap()", data.length);
       markers.clearLayers();
-
-      data.forEach(station => {
-        var marker = L.marker([station.latitude, station.longitude])
+      data.forEach(st => {
+        var marker = L.marker([st.latitude, st.longitude])
           .bindPopup(`
-            <strong>Station ID:</strong> ${station.station_id}<br>
-            <strong>Coords:</strong> ${station.latitude}, ${station.longitude}<br>
-            <strong>Years:</strong> ${station.start_year} - ${station.end_year}
+            <strong>Station ID:</strong> ${st.station_id}<br>
+            <strong>Coords:</strong> ${st.latitude}, ${st.longitude}<br>
+            <strong>Years:</strong> ${st.start_year} - ${st.end_year}
           `);
         markers.addLayer(marker);
       });
-
       map.addLayer(markers);
     }
 
-    // =================== BOUNDING BOX: MOVEEND ===================
     map.on("moveend", () => {
-      // Nur aktualisieren, wenn KEIN Radius aktiv ist
       if (!radiusActive) {
         handleMapMove();
-      } else {
-        console.log("🔵 Radius ist aktiv -> kein BBox-Update");
       }
     });
 
     function handleMapMove() {
-      console.log("📍 BBox: handleMapMove()");
       showLoading();
-
       var bounds = map.getBounds();
       var sw = bounds.getSouthWest();
       var ne = bounds.getNorthEast();
 
       var url = `/stations_in_bounds?swLat=${sw.lat}&swLng=${sw.lng}&neLat=${ne.lat}&neLng=${ne.lng}`;
-      console.log("➡️ Hole bounding box Daten:", url);
-
       fetch(url)
-        .then(res => {
-          if (!res.ok) {
-            throw new Error("BBox-Request fehlgeschlagen");
-          }
-          return res.json();
+        .then(r => {
+          if (!r.ok) throw new Error("BBox-Request fehlgeschlagen");
+          return r.json();
         })
         .then(data => {
-          console.log("✅ Empfangen (BBox):", data.length, "Stationen");
-          currentTableData = data;           // Diese Daten sind derzeit aktiv
+          currentTableData = data;
           populateStationTable(data);
           showStationsOnMap(data);
         })
-        .catch(err => {
-          console.error("❌ Fehler beim BBox-Fetch:", err);
-        })
-        .finally(() => {
-          hideLoading();
-        });
+        .catch(err => console.error("BBox-Fetch Fehler:", err))
+        .finally(() => hideLoading());
     }
 
-    // =================== RADIUS-FUNKTION ===================
     function updateRadius() {
-      console.log("🔵 updateRadius()");
       radiusKm = parseFloat(document.getElementById("radius").value);
-      radiusActive = true; // wir aktivieren den Radius-Modus
-
+      radiusActive = true;
       map.once("click", (e) => {
-        console.log("🟢 Radius Mittelpunkt gewählt bei:", e.latlng);
-
-        if (currentRadiusCircle) map.removeLayer(currentRadiusCircle);
-        if (currentCenterMarker) map.removeLayer(currentCenterMarker);
-
-        currentRadiusCircle = L.circle(e.latlng, {
-          radius: radiusKm * 1000,
-          color: "blue",
-          fillColor: "#add8e6",
-          fillOpacity: 0.5,
-        }).addTo(map);
-
-        currentCenterMarker = L.circleMarker(e.latlng, {
-          radius: 5,
-          color: "red",
-          fillColor: "red",
-          fillOpacity: 1
-        }).addTo(map);
-
-        // Alle Stationen aus 'currentTableData' filtern und Distanz berechnen
-        var centerLat = e.latlng.lat;
-        var centerLng = e.latlng.lng;
-
-        var filtered = currentTableData.map(st => {
-          var dist = getDistance(centerLat, centerLng, parseFloat(st.latitude), parseFloat(st.longitude));
-          return {
-            ...st,
-            distance: dist
-          };
-        }).filter(st => st.distance <= radiusKm);
-
-        // Sortieren (aufsteigend nach Distanz)
-        filtered.sort((a, b) => a.distance - b.distance);
-
-        currentTableData = filtered;
-        populateStationTable(filtered);
-        showStationsOnMap(filtered);
+        drawRadiusAndFilter(e.latlng.lat, e.latlng.lng, currentTableData);
       });
-
       alert("Klicke auf die Karte, um den Mittelpunkt des Radius festzulegen.");
     }
 
-    function removeRadius() {
-      console.log("🔵 removeRadius()");
-      radiusActive = false;
+    function drawRadiusAndFilter(centerLat, centerLng, data) {
+      if (currentRadiusCircle) map.removeLayer(currentRadiusCircle);
+      if (currentCenterMarker) map.removeLayer(currentCenterMarker);
 
-      if (currentRadiusCircle) {
-        map.removeLayer(currentRadiusCircle);
-        currentRadiusCircle = null;
-      }
-      if (currentCenterMarker) {
-        map.removeLayer(currentCenterMarker);
-        currentCenterMarker = null;
-      }
+      currentRadiusCircle = L.circle([centerLat, centerLng], {
+        radius: radiusKm * 1000,
+        color: "blue",
+        fillColor: "#add8e6",
+        fillOpacity: 0.5,
+      }).addTo(map);
 
-      // BBox erneut laden (oder Koordinatensuch-Ergebnis, falls gewünscht)
-      // Wir triggern handleMapMove => BBox
-      handleMapMove();
+      currentCenterMarker = L.circleMarker([centerLat, centerLng], {
+        radius: 5,
+        color: "red",
+        fillColor: "red",
+        fillOpacity: 1
+      }).addTo(map);
+
+      var filtered = data.map(st => {
+        var d = getDistance(centerLat, centerLng, parseFloat(st.latitude), parseFloat(st.longitude));
+        return { ...st, distance: d };
+      }).filter(st => st.distance <= radiusKm);
+
+      filtered.sort((a,b) => a.distance - b.distance);
+      currentTableData = filtered;
+      populateStationTable(filtered);
+      showStationsOnMap(filtered);
     }
 
-    // =================== HAVERSINE ===================
+    function removeRadius() {
+      radiusActive = false;
+      if (currentRadiusCircle) map.removeLayer(currentRadiusCircle);
+      if (currentCenterMarker) map.removeLayer(currentCenterMarker);
+      currentRadiusCircle = null;
+      currentCenterMarker = null;
+      handleMapMove(); // Zurück zur BBox
+    }
+
     function getDistance(lat1, lon1, lat2, lon2) {
-      var R = 6371; // Erdradius in km
+      var R = 6371;
       var dLat = (lat2 - lat1) * Math.PI / 180;
       var dLon = (lon2 - lon1) * Math.PI / 180;
-      var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) *
-              Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      return R * c;
+      var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+              Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+              Math.sin(dLon/2)*Math.sin(dLon/2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // =================== KOORDINATEN-SUCHE ===================
+    // Koordinatensuche (serverseitig)
     function searchByCoordinates() {
       var lat = parseFloat(document.getElementById("searchLat").value);
       var lng = parseFloat(document.getElementById("searchLng").value);
+      var maxSt = parseInt(document.getElementById("maxStations").value, 10) || 10;
+      radiusKm = parseFloat(document.getElementById("radius").value) || 50;
 
       if (isNaN(lat) || isNaN(lng)) {
-        alert("Bitte gültige Zahlen für Latitude und Longitude eingeben!");
+        alert("Bitte gültige Werte für Lat/Lng eingeben!");
         return;
       }
-
-      console.log("🔍 Suche Station(en) ~ Koords:", lat, lng);
-
-      // Falls ein Radius aktiv war, beenden wir ihn
-      // (dann soll die Koordinatensuche Vorrang haben)
-      removeRadius();
+      removeRadius(); // Alte Kreise entfernen
+      radiusActive = true; // Wir bleiben im Radiusmodus (damit BBox nicht reinfunkt)
 
       showLoading();
-      var url = `/search_by_coords?lat=${lat}&lng=${lng}`;
+      var url = `/search_by_coords?lat=${lat}&lng=${lng}&radius=${radiusKm}&limit=${maxSt}`;
       fetch(url)
-        .then(res => {
-          if (!res.ok) {
-            throw new Error("Fehler beim Koordinaten-Search: " + res.statusText);
-          }
-          return res.json();
+        .then(r => {
+          if (!r.ok) throw new Error("Fehler /search_by_coords: " + r.statusText);
+          return r.json();
         })
         .then(data => {
-          console.log("✅ Such-Ergebnis (Coords):", data.length, "Station(en)");
-          currentTableData = data;  // Such-Ergebnis
+          currentTableData = data;
           populateStationTable(data);
           showStationsOnMap(data);
+          drawRadiusOnMap(lat, lng);
 
           if (data.length > 0) {
             map.setView([lat, lng], 10);
           }
         })
         .catch(err => {
-          console.error("❌ Fehler bei searchByCoordinates:", err);
-          alert("Es gab einen Fehler bei der Suche (siehe Konsole).");
+          console.error("searchByCoordinates Fehler:", err);
+          alert("Fehler bei Koord-Suche (siehe Konsole).");
         })
-        .finally(() => {
-          hideLoading();
-        });
+        .finally(() => hideLoading());
     }
+
+    function drawRadiusOnMap(centerLat, centerLng) {
+      if (currentRadiusCircle) map.removeLayer(currentRadiusCircle);
+      if (currentCenterMarker) map.removeLayer(currentCenterMarker);
+
+      currentRadiusCircle = L.circle([centerLat, centerLng], {
+        radius: radiusKm * 1000,
+        color: "blue",
+        fillColor: "#add8e6",
+        fillOpacity: 0.5
+      }).addTo(map);
+
+      currentCenterMarker = L.circleMarker([centerLat, centerLng], {
+        radius: 5,
+        color: "red",
+        fillColor: "red",
+        fillOpacity: 1
+      }).addTo(map);
+    }
+
   </script>
 </body>
 </html>

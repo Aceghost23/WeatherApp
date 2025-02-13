@@ -5,10 +5,10 @@ const { MongoClient } = require('mongodb');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const mongoURI = process.env.MONGO_URI || 'mongodb://mongodb:27017/ghcnd_database';
-let db;
+const mongoURI = process.env.MONGO_URI || 'mongodb://mongodb:27017';
+let db = null;
 
-console.log("🌐 Starte Mongo-Verbindung mit:", mongoURI);
+// Verbindung zu MongoDB
 MongoClient.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(client => {
     db = client.db("ghcnd_database");
@@ -16,7 +16,7 @@ MongoClient.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true 
   })
   .catch(err => console.error("❌ Fehler bei der MongoDB-Verbindung:", err));
 
-// Statische Dateien
+// Statische Dateien (Frontend)
 const frontendPath = path.join(__dirname, '../Frontend');
 app.use(express.static(frontendPath));
 
@@ -26,25 +26,8 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-// ALLE Stationen (optional, falls du es brauchen solltest)
-app.get('/stations', async (req, res) => {
-  console.log("🔍 GET /stations");
-  try {
-    if (!db) {
-      return res.status(500).json({ error: "Datenbank nicht verbunden" });
-    }
-    const stations = await db.collection('stations').find().toArray();
-    console.log("🔍 Anzahl Stationen:", stations.length);
-    res.json(stations);
-  } catch (err) {
-    console.error("❌ Fehler /stations:", err);
-    res.status(500).send("Fehler beim Abrufen der Stationsdaten");
-  }
-});
-
 // BBox
 app.get('/stations_in_bounds', async (req, res) => {
-  console.log("🔍 GET /stations_in_bounds ->", req.query);
   try {
     if (!db) {
       return res.status(500).json({ error: "Datenbank nicht verbunden" });
@@ -75,9 +58,8 @@ app.get('/stations_in_bounds', async (req, res) => {
   }
 });
 
-// Koordinatensuche (Variante B: Toleranz)
+// Koordinatensuche mit Radius & Limit
 app.get('/search_by_coords', async (req, res) => {
-  console.log("🔍 GET /search_by_coords ->", req.query);
   try {
     if (!db) {
       return res.status(500).json({ error: "Datenbank nicht verbunden" });
@@ -85,28 +67,57 @@ app.get('/search_by_coords', async (req, res) => {
 
     const lat = parseFloat(req.query.lat);
     const lng = parseFloat(req.query.lng);
+    const radius = parseFloat(req.query.radius) || 50;
+    const limit = parseInt(req.query.limit, 10) || 10;
 
     if (isNaN(lat) || isNaN(lng)) {
-      return res.status(400).json({ error: "Invalid lat/lng" });
+      return res.status(400).json({ error: "Ungültige Koordinaten" });
     }
 
-    // ± Toleranz
-    const epsilon = 0.0001;
-    const query = {
-      latitude: { $gte: lat - epsilon, $lte: lat + epsilon },
-      longitude: { $gte: lng - epsilon, $lte: lng + epsilon },
-    };
+    // Alle Stationen laden
+    const allStations = await db.collection('stations').find().toArray();
+    // Filtern, Distanz berechnen
+    const filtered = [];
+    for (const st of allStations) {
+      const stLat = parseFloat(st.latitude);
+      const stLng = parseFloat(st.longitude);
+      if (!isNaN(stLat) && !isNaN(stLng)) {
+        const dist = haversine(lat, lng, stLat, stLng);
+        if (dist <= radius) {
+          filtered.push({
+            ...st,
+            distance: dist
+          });
+        }
+      }
+    }
+    // Sortieren nach Distanz
+    filtered.sort((a, b) => a.distance - b.distance);
 
-    console.log("🔎 Koordinatensuche. Epsilon:", epsilon, "Query:", query);
-    const stations = await db.collection('stations').find(query).toArray();
-    console.log("🔍 Gefundene Stationen:", stations.length);
+    // limit kappen
+    const limited = filtered.slice(0, limit);
 
-    res.json(stations);
+    console.log(`🔎 /search_by_coords: lat=${lat}, lng=${lng}, radius=${radius}, limit=${limit}`);
+    console.log("   Gefundene Stationen:", limited.length);
+    res.json(limited);
   } catch (err) {
-    console.error("❌ Fehler /search_by_coords:", err);
+    console.error("❌ Fehler in /search_by_coords:", err);
     res.status(500).send("Fehler bei Koordinaten-Suche");
   }
 });
+
+// Haversine
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Erdradius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1*Math.PI/180) *
+            Math.cos(lat2*Math.PI/180) *
+            Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
 
 app.listen(PORT, () => {
   console.log(`🌍 Server läuft auf http://localhost:${PORT}`);
