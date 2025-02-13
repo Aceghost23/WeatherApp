@@ -14,6 +14,9 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
     * {
       margin: 0;
@@ -64,7 +67,7 @@
     /* =========== MAP =========== */
     #map {
       width: 100%;
-      height: 60%; /* 60% für Karte */
+      height: 60%;
     }
 
     /* =========== STATIONSLISTE =========== */
@@ -119,58 +122,80 @@
       100% { transform: rotate(360deg); }
     }
 
-    /* =========== SIDEBAR (Station-Details, zwischen Top & Table) =========== */
+    /* =========== SIDEBAR (Year Range) =========== */
     .sidebar {
       position: fixed;
-      /* Sidebar zwischen top-controls und stationsList.
-         Hier nehmen wir an, die top-controls haben ~110px Höhe 
-         und stationsList beginnt ~60% vom Bildschirm.
-         Du kannst die Werte ggf. anpassen. */
-      top: 120px; 
-      bottom: 180px; /* so bleibt es oberhalb des stationsList-Bereiches */
-      right: -300px; /* Start versteckt */
-      width: 280px;
+      top: 120px;
+      bottom: 180px;
+      right: -350px;
+      width: 300px;
       background-color: #fff;
       border-left: 1px solid #ccc;
       padding: 15px;
       box-shadow: -3px 0 5px rgba(0,0,0,0.2);
       transition: right 0.3s;
       z-index: 9999;
-      overflow: auto; /* falls Text / Sliders größer wird */
+      overflow: auto;
     }
     .sidebar.open {
-      right: 0; /* Sichtbar, wenn Klasse "open" */
+      right: 0;
     }
     .sidebar h2 {
       margin-bottom: 10px;
+      font-size: 16px;
+    }
+    .sidebar .year-inputs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
     }
     .sidebar label {
-      display: block;
-      margin-top: 10px;
       font-weight: normal;
+      margin-right: 5px;
     }
-    .sidebar .slider-container {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 5px;
-    }
-    #closeSidebarBtn {
+    .sidebar button {
       margin-top: 10px;
-      padding: 5px 10px;
+      padding: 6px 12px;
       cursor: pointer;
+    }
+
+    /* *** Popup Tabs *** */
+    .tab-buttons {
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .tab-buttons button {
+      margin-right: 5px;
+      padding: 4px 8px; 
+      cursor: pointer;
+    }
+    .popup-closebtn {
+      background: transparent;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      color: #666;
+      margin-left: auto;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
     }
   </style>
 </head>
 
 <body>
 
-  <!-- ========== LADESPINNER OVERLAY ========== -->
+  <!-- Lade-Overlay -->
   <div id="loadingOverlay">
     <div class="spinner"></div>
   </div>
 
-  <!-- ========== TOP CONTROLS LEISTE ========== -->
+  <!-- Top Controls -->
   <div class="top-controls">
     <fieldset>
       <legend>Radius Settings</legend>
@@ -190,15 +215,14 @@
       <input type="number" id="searchLat" step="0.0001" placeholder="48.7094" />
       <label for="searchLng">Lng:</label>
       <input type="number" id="searchLng" step="0.0001" placeholder="-94.5853"/>
-      
       <button onclick="searchByCoordinates()">Search by Coords</button>
     </fieldset>
   </div>
 
-  <!-- ========== MAP ========== -->
+  <!-- Map -->
   <div id="map"></div>
 
-  <!-- ========== STATIONSLISTE ========== -->
+  <!-- Stations List -->
   <div id="stationsList">
     <h3>Stations</h3>
     <div class="station-table-container">
@@ -218,47 +242,29 @@
     </div>
   </div>
 
-  <!-- ========== SIDEBAR (STATION-DETAILS & DOPPELSLIDER) ========== -->
+  <!-- SIDEBAR for Year Range -->
   <div id="sidebar" class="sidebar">
-    <h2>Station Info</h2>
-    <p><strong>ID:</strong> <span id="sidebarStationId"></span></p>
-    <p><strong>Coords:</strong> <span id="sidebarStationCoords"></span></p>
-    <p><strong>Zeitraum:</strong> <span id="sidebarStationYears"></span></p>
-
-    <!-- Zwei Slider: Minimales und maximales Jahr -->
-    <label>Wähle Start- und Endjahr:</label>
-
-    <!-- Min-Jahr-Slider -->
-    <div class="slider-container">
-      <input 
-        type="range" 
-        id="yearSliderMin" 
-        step="1" 
-        oninput="updateYearRangeSliders()" 
-      />
-      <span id="yearSliderMinVal"></span>
+    <h2>Year Range</h2>
+    <p>Adjust the start/end years, then click "Confirm".</p>
+    <div class="year-inputs">
+      <div>
+        <label for="yearStart">Start:</label>
+        <input type="number" id="yearStart" />
+      </div>
+      <div>
+        <label for="yearEnd">End:</label>
+        <input type="number" id="yearEnd" />
+      </div>
     </div>
-
-    <!-- Max-Jahr-Slider -->
-    <div class="slider-container">
-      <input 
-        type="range" 
-        id="yearSliderMax" 
-        step="1" 
-        oninput="updateYearRangeSliders()" 
-      />
-      <span id="yearSliderMaxVal"></span>
-    </div>
-
-    <button id="closeSidebarBtn" onclick="closeSidebar()">Schließen</button>
+    <button onclick="confirmYearRange()">Confirm</button>
   </div>
 
   <script>
-    // =================== LEAFLET-KARTE ===================
+    // LEAFLET
     var map = L.map("map").setView([51.505, -0.09], 5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
-      attribution: "© OpenStreetMap contributors",
+      attribution: "© OpenStreetMap contributors"
     }).addTo(map);
 
     var markers = L.markerClusterGroup();
@@ -268,18 +274,11 @@
     var currentCenterMarker = null;
     var radiusKm = 0;
 
-    // SIDEBAR-Referenzen
-    var sidebar = document.getElementById("sidebar");
-    var sidebarStationId = document.getElementById("sidebarStationId");
-    var sidebarStationCoords = document.getElementById("sidebarStationCoords");
-    var sidebarStationYears = document.getElementById("sidebarStationYears");
+    // GLOBAL station+marker
+    var selectedStation = null;
+    var selectedMarker = null;
 
-    var yearSliderMin = document.getElementById("yearSliderMin");
-    var yearSliderMax = document.getElementById("yearSliderMax");
-    var yearSliderMinVal = document.getElementById("yearSliderMinVal");
-    var yearSliderMaxVal = document.getElementById("yearSliderMaxVal");
-
-    // ============ LADESPINNER ============
+    // Spinner
     function showLoading() {
       document.getElementById("loadingOverlay").style.display = "flex";
     }
@@ -287,35 +286,49 @@
       document.getElementById("loadingOverlay").style.display = "none";
     }
 
-    // ============ TABELLE =============
+    // TABLE
     function populateStationTable(data) {
       var tableBody = document.querySelector("#stationTable tbody");
       tableBody.innerHTML = "";
-
-      data.forEach(station => {
+      data.forEach(st => {
         var row = document.createElement("tr");
         row.innerHTML = `
-          <td>${station.station_id}</td>
-          <td>${station.latitude}</td>
-          <td>${station.longitude}</td>
-          <td>${station.start_year}</td>
-          <td>${station.end_year}</td>
-          <td>${station.distance ? station.distance.toFixed(2) : "-"}</td>
+          <td>${st.station_id}</td>
+          <td>${st.latitude}</td>
+          <td>${st.longitude}</td>
+          <td>${st.start_year}</td>
+          <td>${st.end_year}</td>
+          <td>${st.distance ? st.distance.toFixed(2) : "-"}</td>
         `;
         tableBody.appendChild(row);
       });
     }
 
-    // ============ MARKERCLUSTER + MARKER-CLICK =============
+    // MARKER-KLICK => "Waiting.." + open Sidebar
     function showStationsOnMap(data) {
       markers.clearLayers();
 
       data.forEach(st => {
-        var marker = L.marker([st.latitude, st.longitude]);
-        
-        // Klick-Event => openSidebar
+        var marker = L.marker([st.latitude, st.longitude], {
+          // disable autoPan in leaflet
+        });
+
         marker.on("click", function() {
-          openSidebar(st);
+          // store station + marker
+          selectedStation = st;
+          selectedMarker = marker;
+          // Popup with "Waiting..."
+          marker.bindPopup(
+            "<strong>Waiting for year range selection...</strong>",
+            {
+              autoPan: false,
+              closeOnClick: false,
+              autoClose: false
+            }
+          ).openPopup();
+
+          // Sidebar open
+          openSidebar(st.start_year, st.end_year);
         });
 
         markers.addLayer(marker);
@@ -324,57 +337,199 @@
       map.addLayer(markers);
     }
 
-    // ============ SIDEBAR FUNKTIONEN (Marker-Klick => openSidebar) ============
-    function openSidebar(station) {
-      // Station-Info in Sidebar schreiben
-      sidebarStationId.textContent = station.station_id;
-      sidebarStationCoords.textContent = station.latitude + ", " + station.longitude;
-      sidebarStationYears.textContent = station.start_year + " - " + station.end_year;
-
-      // Min-Jahr-Slider
-      yearSliderMin.min = station.start_year;
-      yearSliderMin.max = station.end_year;
-      yearSliderMin.value = station.start_year;  // default
-
-      // Max-Jahr-Slider
-      yearSliderMax.min = station.start_year;
-      yearSliderMax.max = station.end_year;
-      yearSliderMax.value = station.end_year;    // default
-
-      // Anzeige aktualisieren
-      yearSliderMinVal.textContent = station.start_year;
-      yearSliderMaxVal.textContent = station.end_year;
-
-      // Sidebar einblenden
-      sidebar.classList.add("open");
+    // SIDEBAR
+    function openSidebar(defStart, defEnd) {
+      var sb = document.getElementById("sidebar");
+      sb.classList.add("open");
+      document.getElementById("yearStart").value = defStart || 1900;
+      document.getElementById("yearEnd").value = defEnd || 2025;
     }
-
     function closeSidebar() {
-      sidebar.classList.remove("open");
+      document.getElementById("sidebar").classList.remove("open");
     }
 
-    // Wird aufgerufen, wenn einer der beiden Slider bewegt wird
-    function updateYearRangeSliders() {
-      // Achte darauf, dass der Min-Slider nie über den Max-Slider hinausgeht
-      if (parseInt(yearSliderMin.value) > parseInt(yearSliderMax.value)) {
-        yearSliderMin.value = yearSliderMax.value;
+    // Confirm => /station_data => final popup
+    async function confirmYearRange() {
+      if (!selectedStation || !selectedMarker) {
+        alert("No station selected!");
+        return;
+      }
+      let startY = parseInt(document.getElementById("yearStart").value, 10);
+      let endY = parseInt(document.getElementById("yearEnd").value, 10);
+      if (isNaN(startY) || isNaN(endY) || startY > endY) {
+        alert("Invalid year range!");
+        return;
       }
 
-      yearSliderMinVal.textContent = yearSliderMin.value;
-      yearSliderMaxVal.textContent = yearSliderMax.value;
+      try {
+        showLoading();
+        let url = `/station_data?station_id=${selectedStation.station_id}&startYear=${startY}&endYear=${endY}`;
+        let resp = await fetch(url);
+        hideLoading();
+        if (!resp.ok) throw new Error("Fehler /station_data: " + resp.statusText);
+        let resultData = await resp.json();
 
-      // Hier könntest du später z. B. 
-      // => Server-Abfrage für Daten in dem Zeitraum 
-      // => oder Filter, etc.
+        let popupContent = createPopupTabs(selectedStation, resultData);
+        selectedMarker.bindPopup(popupContent, {
+          maxWidth: 500,
+          autoPan: false,
+          closeOnClick: false,
+          autoClose: false
+        }).openPopup();
+
+        // popupopen => chart init
+        selectedMarker.on("popupopen", function(e) {
+          initChartInPopup(selectedStation, resultData, e.popup);
+        });
+
+        closeSidebar();
+
+      } catch(err) {
+        console.error("confirmYearRange Fehler:", err);
+        alert("Fehler /station_data (siehe Konsole)");
+      }
     }
 
-    // ============ BOUNDING BOX =============
+    // FINAL MARKER-POPUP: TEXT+GRAPH, X button
+    function createPopupTabs(station, resultData) {
+      let yearly = resultData.yearlyAverages || [];
+      let seasonal = resultData.seasonalAverages || [];
+
+      // YEARLY table
+      let tableYearly = `
+        <div style="max-height:200px; overflow-y:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f4f4f4;">
+              <th>Year</th><th>Min</th><th>Max</th><th>Avg</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      yearly.forEach(y => {
+        tableYearly += `
+          <tr>
+            <td>${y.year}</td>
+            <td>${y.minTemp.toFixed(1)}</td>
+            <td>${y.maxTemp.toFixed(1)}</td>
+            <td>${y.avgTemp.toFixed(1)}</td>
+          </tr>
+        `;
+      });
+      tableYearly += `</tbody></table></div>`;
+
+      // SEASON table
+      let tableSeason = `
+        <div style="max-height:200px; overflow-y:auto; margin-top:8px;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr style="background:#f4f4f4;">
+              <th>Year</th><th>Season</th><th>Min</th><th>Max</th><th>Avg</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+      seasonal.forEach(s => {
+        tableSeason += `
+          <tr>
+            <td>${s.year}</td>
+            <td>${s.season}</td>
+            <td>${s.minTemp.toFixed(1)}</td>
+            <td>${s.maxTemp.toFixed(1)}</td>
+            <td>${s.avgTemp.toFixed(1)}</td>
+          </tr>
+        `;
+      });
+      tableSeason += `</tbody></table></div>`;
+
+      let textHTML = `
+        <strong>Yearly (Min/Max/Avg)</strong><br>${tableYearly}
+        <hr><strong>Seasonal (Min/Max/Avg)</strong><br>${tableSeason}
+      `;
+
+      return `
+      <div style="width:300px;">
+        <div class="tab-buttons">
+          <div>
+            <button onclick="switchTab('text_${station.station_id}', 'chart_${station.station_id}')">Text</button>
+            <button onclick="switchTab('chart_${station.station_id}', 'text_${station.station_id}')">Graph</button>
+          </div>
+          <button class="popup-closebtn" onclick="closeMarkerPopup()">X</button>
+        </div>
+        <div id="text_${station.station_id}" class="tab-content active">
+          ${textHTML}
+        </div>
+        <div id="chart_${station.station_id}" class="tab-content">
+          <canvas id="canvas_${station.station_id}" width="280" height="160" style="border:1px solid #ccc;"></canvas>
+        </div>
+      </div>`;
+    }
+
+    function switchTab(showId, hideId) {
+      document.getElementById(showId).classList.add("active");
+      document.getElementById(hideId).classList.remove("active");
+    }
+
+    function closeMarkerPopup() {
+      if (selectedMarker && selectedMarker._popup) {
+        selectedMarker.closePopup();
+      }
+    }
+
+    function initChartInPopup(station, resultData, popup) {
+      let canvas = popup._contentNode.querySelector(`#canvas_${station.station_id}`);
+      if (!canvas) return;
+
+      let ctx = canvas.getContext("2d");
+      let yearly = resultData.yearlyAverages || [];
+      let labels = yearly.map(d => d.year);
+      let minData = yearly.map(d => d.minTemp);
+      let maxData = yearly.map(d => d.maxTemp);
+      let avgData = yearly.map(d => d.avgTemp);
+
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Min (°C)',
+              data: minData,
+              borderColor: 'blue',
+              backgroundColor: 'rgba(0,0,255,0.1)',
+              fill: true
+            },
+            {
+              label: 'Max (°C)',
+              data: maxData,
+              borderColor: 'red',
+              backgroundColor: 'rgba(255,0,0,0.1)',
+              fill: true
+            },
+            {
+              label: 'Avg (°C)',
+              data: avgData,
+              borderColor: 'green',
+              backgroundColor: 'rgba(0,255,0,0.1)',
+              fill: true
+            }
+          ]
+        },
+        options: {
+          responsive: false,
+          scales: {
+            y: { beginAtZero: false }
+          }
+        }
+      });
+    }
+
+    // BOUNDING BOX
     map.on("moveend", () => {
       if (!radiusActive) {
         handleMapMove();
       }
     });
-
     function handleMapMove() {
       showLoading();
       var bounds = map.getBounds();
@@ -396,7 +551,7 @@
         .finally(() => hideLoading());
     }
 
-    // ============ RADIUS CLICK =============
+    // RADIUS
     function updateRadius() {
       radiusKm = parseFloat(document.getElementById("radius").value);
       radiusActive = true;
@@ -405,7 +560,6 @@
       });
       alert("Klicke auf die Karte, um den Mittelpunkt des Radius festzulegen.");
     }
-
     function drawRadiusAndFilter(centerLat, centerLng, data) {
       if (currentRadiusCircle) map.removeLayer(currentRadiusCircle);
       if (currentCenterMarker) map.removeLayer(currentCenterMarker);
@@ -434,17 +588,16 @@
       populateStationTable(filtered);
       showStationsOnMap(filtered);
     }
-
     function removeRadius() {
       radiusActive = false;
       if (currentRadiusCircle) map.removeLayer(currentRadiusCircle);
       if (currentCenterMarker) map.removeLayer(currentCenterMarker);
       currentRadiusCircle = null;
       currentCenterMarker = null;
-      handleMapMove(); // Zurück zur BBox
+      handleMapMove();
     }
 
-    // ============ HAVERSINE =================
+    // HAVERSINE
     function getDistance(lat1, lon1, lat2, lon2) {
       var R = 6371;
       var dLat = (lat2 - lat1) * Math.PI / 180;
@@ -455,7 +608,7 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // ============ KOORDINATEN-SUCHE (serverseitig) ============
+    // KOORDINATEN-SUCHE
     function searchByCoordinates() {
       var lat = parseFloat(document.getElementById("searchLat").value);
       var lng = parseFloat(document.getElementById("searchLng").value);
@@ -466,8 +619,8 @@
         alert("Bitte gültige Werte für Lat/Lng eingeben!");
         return;
       }
-      removeRadius(); 
-      radiusActive = true; 
+      removeRadius();
+      radiusActive = true;
 
       showLoading();
       var url = `/search_by_coords?lat=${lat}&lng=${lng}&radius=${radiusKm}&limit=${maxSt}`;
@@ -481,35 +634,12 @@
           populateStationTable(data);
           showStationsOnMap(data);
           drawRadiusOnMap(lat, lng);
-
-          if (data.length > 0) {
-            map.setView([lat, lng], 10);
-          }
         })
         .catch(err => {
           console.error("searchByCoordinates Fehler:", err);
           alert("Fehler bei Koord-Suche (siehe Konsole).");
         })
         .finally(() => hideLoading());
-    }
-
-    function drawRadiusOnMap(centerLat, centerLng) {
-      if (currentRadiusCircle) map.removeLayer(currentRadiusCircle);
-      if (currentCenterMarker) map.removeLayer(currentCenterMarker);
-
-      currentRadiusCircle = L.circle([centerLat, centerLng], {
-        radius: radiusKm * 1000,
-        color: "blue",
-        fillColor: "#add8e6",
-        fillOpacity: 0.5
-      }).addTo(map);
-
-      currentCenterMarker = L.circleMarker([centerLat, centerLng], {
-        radius: 5,
-        color: "red",
-        fillColor: "red",
-        fillOpacity: 1
-      }).addTo(map);
     }
   </script>
 </body>
