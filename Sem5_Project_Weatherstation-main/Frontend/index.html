@@ -34,10 +34,9 @@
       display: flex;
       gap: 20px;
       flex-wrap: wrap;
-      align-items: flex-start; /* So werden fieldsets einheitlich oben ausgerichtet */
+      align-items: flex-start;
       z-index: 9999;
     }
-
     fieldset {
       border: 1px solid #ccc;
       padding: 10px 15px;
@@ -71,7 +70,7 @@
     /* =========== STATIONSLISTE =========== */
     #stationsList {
       padding: 20px;
-      height: calc(40% - 20px); /* restlicher Platz */
+      height: calc(40% - 20px);
       overflow-y: auto;
     }
     .station-table-container {
@@ -108,8 +107,8 @@
       justify-content: center;
     }
     .spinner {
-      border: 10px solid #f3f3f3; 
-      border-top: 10px solid #3498db; 
+      border: 10px solid #f3f3f3;
+      border-top: 10px solid #3498db;
       border-radius: 50%;
       width: 60px;
       height: 60px;
@@ -118,6 +117,48 @@
     @keyframes spin {
       0%   { transform: rotate(0deg); }
       100% { transform: rotate(360deg); }
+    }
+
+    /* =========== SIDEBAR (Station-Details, zwischen Top & Table) =========== */
+    .sidebar {
+      position: fixed;
+      /* Sidebar zwischen top-controls und stationsList.
+         Hier nehmen wir an, die top-controls haben ~110px Höhe 
+         und stationsList beginnt ~60% vom Bildschirm.
+         Du kannst die Werte ggf. anpassen. */
+      top: 120px; 
+      bottom: 180px; /* so bleibt es oberhalb des stationsList-Bereiches */
+      right: -300px; /* Start versteckt */
+      width: 280px;
+      background-color: #fff;
+      border-left: 1px solid #ccc;
+      padding: 15px;
+      box-shadow: -3px 0 5px rgba(0,0,0,0.2);
+      transition: right 0.3s;
+      z-index: 9999;
+      overflow: auto; /* falls Text / Sliders größer wird */
+    }
+    .sidebar.open {
+      right: 0; /* Sichtbar, wenn Klasse "open" */
+    }
+    .sidebar h2 {
+      margin-bottom: 10px;
+    }
+    .sidebar label {
+      display: block;
+      margin-top: 10px;
+      font-weight: normal;
+    }
+    .sidebar .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+    #closeSidebarBtn {
+      margin-top: 10px;
+      padding: 5px 10px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -131,8 +172,6 @@
 
   <!-- ========== TOP CONTROLS LEISTE ========== -->
   <div class="top-controls">
-
-    <!-- Feld: Radius-Einstellungen -->
     <fieldset>
       <legend>Radius Settings</legend>
       <label for="radius">Radius (km):</label>
@@ -145,7 +184,6 @@
       <button onclick="removeRadius()">Remove Radius</button>
     </fieldset>
 
-    <!-- Feld: Koordinaten-Suche -->
     <fieldset>
       <legend>Coordinate Search</legend>
       <label for="searchLat">Lat:</label>
@@ -155,7 +193,6 @@
       
       <button onclick="searchByCoordinates()">Search by Coords</button>
     </fieldset>
-
   </div>
 
   <!-- ========== MAP ========== -->
@@ -181,12 +218,42 @@
     </div>
   </div>
 
-  <script>
-    /* =============== Dein bestehender Script-Code unverändert =============== 
-       (vergleiche mit deiner letzten Endversion)
-       (Siehe unten, falls du den Code nochmal brauchst)
-    */
+  <!-- ========== SIDEBAR (STATION-DETAILS & DOPPELSLIDER) ========== -->
+  <div id="sidebar" class="sidebar">
+    <h2>Station Info</h2>
+    <p><strong>ID:</strong> <span id="sidebarStationId"></span></p>
+    <p><strong>Coords:</strong> <span id="sidebarStationCoords"></span></p>
+    <p><strong>Zeitraum:</strong> <span id="sidebarStationYears"></span></p>
 
+    <!-- Zwei Slider: Minimales und maximales Jahr -->
+    <label>Wähle Start- und Endjahr:</label>
+
+    <!-- Min-Jahr-Slider -->
+    <div class="slider-container">
+      <input 
+        type="range" 
+        id="yearSliderMin" 
+        step="1" 
+        oninput="updateYearRangeSliders()" 
+      />
+      <span id="yearSliderMinVal"></span>
+    </div>
+
+    <!-- Max-Jahr-Slider -->
+    <div class="slider-container">
+      <input 
+        type="range" 
+        id="yearSliderMax" 
+        step="1" 
+        oninput="updateYearRangeSliders()" 
+      />
+      <span id="yearSliderMaxVal"></span>
+    </div>
+
+    <button id="closeSidebarBtn" onclick="closeSidebar()">Schließen</button>
+  </div>
+
+  <script>
     // =================== LEAFLET-KARTE ===================
     var map = L.map("map").setView([51.505, -0.09], 5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -201,6 +268,18 @@
     var currentCenterMarker = null;
     var radiusKm = 0;
 
+    // SIDEBAR-Referenzen
+    var sidebar = document.getElementById("sidebar");
+    var sidebarStationId = document.getElementById("sidebarStationId");
+    var sidebarStationCoords = document.getElementById("sidebarStationCoords");
+    var sidebarStationYears = document.getElementById("sidebarStationYears");
+
+    var yearSliderMin = document.getElementById("yearSliderMin");
+    var yearSliderMax = document.getElementById("yearSliderMax");
+    var yearSliderMinVal = document.getElementById("yearSliderMinVal");
+    var yearSliderMaxVal = document.getElementById("yearSliderMaxVal");
+
+    // ============ LADESPINNER ============
     function showLoading() {
       document.getElementById("loadingOverlay").style.display = "flex";
     }
@@ -208,6 +287,7 @@
       document.getElementById("loadingOverlay").style.display = "none";
     }
 
+    // ============ TABELLE =============
     function populateStationTable(data) {
       var tableBody = document.querySelector("#stationTable tbody");
       tableBody.innerHTML = "";
@@ -226,20 +306,69 @@
       });
     }
 
+    // ============ MARKERCLUSTER + MARKER-CLICK =============
     function showStationsOnMap(data) {
       markers.clearLayers();
+
       data.forEach(st => {
-        var marker = L.marker([st.latitude, st.longitude])
-          .bindPopup(`
-            <strong>Station ID:</strong> ${st.station_id}<br>
-            <strong>Coords:</strong> ${st.latitude}, ${st.longitude}<br>
-            <strong>Years:</strong> ${st.start_year} - ${st.end_year}
-          `);
+        var marker = L.marker([st.latitude, st.longitude]);
+        
+        // Klick-Event => openSidebar
+        marker.on("click", function() {
+          openSidebar(st);
+        });
+
         markers.addLayer(marker);
       });
+
       map.addLayer(markers);
     }
 
+    // ============ SIDEBAR FUNKTIONEN (Marker-Klick => openSidebar) ============
+    function openSidebar(station) {
+      // Station-Info in Sidebar schreiben
+      sidebarStationId.textContent = station.station_id;
+      sidebarStationCoords.textContent = station.latitude + ", " + station.longitude;
+      sidebarStationYears.textContent = station.start_year + " - " + station.end_year;
+
+      // Min-Jahr-Slider
+      yearSliderMin.min = station.start_year;
+      yearSliderMin.max = station.end_year;
+      yearSliderMin.value = station.start_year;  // default
+
+      // Max-Jahr-Slider
+      yearSliderMax.min = station.start_year;
+      yearSliderMax.max = station.end_year;
+      yearSliderMax.value = station.end_year;    // default
+
+      // Anzeige aktualisieren
+      yearSliderMinVal.textContent = station.start_year;
+      yearSliderMaxVal.textContent = station.end_year;
+
+      // Sidebar einblenden
+      sidebar.classList.add("open");
+    }
+
+    function closeSidebar() {
+      sidebar.classList.remove("open");
+    }
+
+    // Wird aufgerufen, wenn einer der beiden Slider bewegt wird
+    function updateYearRangeSliders() {
+      // Achte darauf, dass der Min-Slider nie über den Max-Slider hinausgeht
+      if (parseInt(yearSliderMin.value) > parseInt(yearSliderMax.value)) {
+        yearSliderMin.value = yearSliderMax.value;
+      }
+
+      yearSliderMinVal.textContent = yearSliderMin.value;
+      yearSliderMaxVal.textContent = yearSliderMax.value;
+
+      // Hier könntest du später z. B. 
+      // => Server-Abfrage für Daten in dem Zeitraum 
+      // => oder Filter, etc.
+    }
+
+    // ============ BOUNDING BOX =============
     map.on("moveend", () => {
       if (!radiusActive) {
         handleMapMove();
@@ -267,6 +396,7 @@
         .finally(() => hideLoading());
     }
 
+    // ============ RADIUS CLICK =============
     function updateRadius() {
       radiusKm = parseFloat(document.getElementById("radius").value);
       radiusActive = true;
@@ -314,6 +444,7 @@
       handleMapMove(); // Zurück zur BBox
     }
 
+    // ============ HAVERSINE =================
     function getDistance(lat1, lon1, lat2, lon2) {
       var R = 6371;
       var dLat = (lat2 - lat1) * Math.PI / 180;
@@ -324,7 +455,7 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // Koordinatensuche (serverseitig)
+    // ============ KOORDINATEN-SUCHE (serverseitig) ============
     function searchByCoordinates() {
       var lat = parseFloat(document.getElementById("searchLat").value);
       var lng = parseFloat(document.getElementById("searchLng").value);
@@ -335,8 +466,8 @@
         alert("Bitte gültige Werte für Lat/Lng eingeben!");
         return;
       }
-      removeRadius(); // Alte Kreise entfernen
-      radiusActive = true; // Wir bleiben im Radiusmodus (damit BBox nicht reinfunkt)
+      removeRadius(); 
+      radiusActive = true; 
 
       showLoading();
       var url = `/search_by_coords?lat=${lat}&lng=${lng}&radius=${radiusKm}&limit=${maxSt}`;
@@ -380,7 +511,6 @@
         fillOpacity: 1
       }).addTo(map);
     }
-
   </script>
 </body>
 </html>
