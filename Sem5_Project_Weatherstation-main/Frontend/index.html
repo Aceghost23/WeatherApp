@@ -28,7 +28,7 @@
       font-family: Arial, sans-serif;
     }
 
-    /* =========== TOP CONTROLS LEISTE =========== */
+    /* =========== TOP CONTROLS =========== */
     .top-controls {
       width: 100%;
       background-color: rgba(255, 255, 255, 0.95);
@@ -159,7 +159,7 @@
       cursor: pointer;
     }
 
-    /* *** Popup Tabs *** */
+    /* =========== POPUP TABS (3 TABS) + STICKY HEADERS =========== */
     .tab-buttons {
       margin-bottom: 8px;
       display: flex;
@@ -184,6 +184,13 @@
     }
     .tab-content.active {
       display: block;
+    }
+    /* sticky thead in popup tables */
+    .popup-table thead th {
+      position: sticky;
+      top: 0;
+      background-color: #f4f4f4;
+      z-index: 2;
     }
   </style>
 </head>
@@ -304,30 +311,29 @@
       });
     }
 
-    // MARKER-KLICK => "Waiting.." + open Sidebar
+    // MARKER-KLICK => "Waiting.." + openSidebar
     function showStationsOnMap(data) {
       markers.clearLayers();
 
       data.forEach(st => {
         var marker = L.marker([st.latitude, st.longitude], {
-          // disable autoPan in leaflet
+          // no autoPan
         });
 
         marker.on("click", function() {
-          // store station + marker
           selectedStation = st;
           selectedMarker = marker;
-          // Popup with "Waiting..."
+          // popup "Waiting..."
           marker.bindPopup(
             "<strong>Waiting for year range selection...</strong>",
             {
               autoPan: false,
               closeOnClick: false,
-              autoClose: false
+              autoClose: false,
+              keepInView: true
             }
           ).openPopup();
 
-          // Sidebar open
           openSidebar(st.start_year, st.end_year);
         });
 
@@ -339,8 +345,7 @@
 
     // SIDEBAR
     function openSidebar(defStart, defEnd) {
-      var sb = document.getElementById("sidebar");
-      sb.classList.add("open");
+      document.getElementById("sidebar").classList.add("open");
       document.getElementById("yearStart").value = defStart || 1900;
       document.getElementById("yearEnd").value = defEnd || 2025;
     }
@@ -348,7 +353,7 @@
       document.getElementById("sidebar").classList.remove("open");
     }
 
-    // Confirm => /station_data => final popup
+    // Confirm => /station_data => final popup (3 TABS)
     async function confirmYearRange() {
       if (!selectedStation || !selectedMarker) {
         alert("No station selected!");
@@ -372,102 +377,125 @@
         let popupContent = createPopupTabs(selectedStation, resultData);
         selectedMarker.bindPopup(popupContent, {
           maxWidth: 500,
-          autoPan: false,
+          autoPan: true,
           closeOnClick: false,
-          autoClose: false
+          autoClose: false,
+          keepInView: true
         }).openPopup();
 
-        // popupopen => chart init
+        // "popupopen" => chart init
         selectedMarker.on("popupopen", function(e) {
           initChartInPopup(selectedStation, resultData, e.popup);
         });
 
         closeSidebar();
-
       } catch(err) {
         console.error("confirmYearRange Fehler:", err);
         alert("Fehler /station_data (siehe Konsole)");
       }
     }
 
-    // FINAL MARKER-POPUP: TEXT+GRAPH, X button
+    // 3 Tabs: Yearly, Seasonal, Graph
     function createPopupTabs(station, resultData) {
-      let yearly = resultData.yearlyAverages || [];
-      let seasonal = resultData.seasonalAverages || [];
+      const yearly = resultData.yearlyAverages || [];
+      const seasonal = resultData.seasonalAverages || [];
 
-      // YEARLY table
-      let tableYearly = `
+      // YEARLY TABLE
+      let yearlyHTML = `
         <div style="max-height:200px; overflow-y:auto;">
-        <table style="width:100%; border-collapse:collapse;">
+        <table class="popup-table" style="width:100%; border-collapse:collapse;">
           <thead>
-            <tr style="background:#f4f4f4;">
-              <th>Year</th><th>Min</th><th>Max</th><th>Avg</th>
+            <tr>
+              <th>Year</th>
+              <th>Min (°C)</th>
+              <th>Max (°C)</th>
+              <th>Avg (°C)</th>
             </tr>
           </thead>
           <tbody>
       `;
       yearly.forEach(y => {
-        tableYearly += `
+        yearlyHTML += `
           <tr>
             <td>${y.year}</td>
-            <td>${y.minTemp.toFixed(1)}</td>
-            <td>${y.maxTemp.toFixed(1)}</td>
-            <td>${y.avgTemp.toFixed(1)}</td>
+            <td>${y.minTemp.toFixed(1)}°C</td>
+            <td>${y.maxTemp.toFixed(1)}°C</td>
+            <td>${y.avgTemp.toFixed(1)}°C</td>
           </tr>
         `;
       });
-      tableYearly += `</tbody></table></div>`;
+      yearlyHTML += `</tbody></table></div>`;
 
-      // SEASON table
-      let tableSeason = `
-        <div style="max-height:200px; overflow-y:auto; margin-top:8px;">
-        <table style="width:100%; border-collapse:collapse;">
+      // SEASONAL TABLE
+      let seasonHTML = `
+        <div style="max-height:200px; overflow-y:auto;">
+        <table class="popup-table" style="width:100%; border-collapse:collapse;">
           <thead>
-            <tr style="background:#f4f4f4;">
-              <th>Year</th><th>Season</th><th>Min</th><th>Max</th><th>Avg</th>
+            <tr>
+              <th>Year</th>
+              <th>Season</th>
+              <th>Min (°C)</th>
+              <th>Max (°C)</th>
+              <th>Avg (°C)</th>
             </tr>
           </thead>
           <tbody>
       `;
       seasonal.forEach(s => {
-        tableSeason += `
+        seasonHTML += `
           <tr>
             <td>${s.year}</td>
             <td>${s.season}</td>
-            <td>${s.minTemp.toFixed(1)}</td>
-            <td>${s.maxTemp.toFixed(1)}</td>
-            <td>${s.avgTemp.toFixed(1)}</td>
+            <td>${s.minTemp.toFixed(1)}°C</td>
+            <td>${s.maxTemp.toFixed(1)}°C</td>
+            <td>${s.avgTemp.toFixed(1)}°C</td>
           </tr>
         `;
       });
-      tableSeason += `</tbody></table></div>`;
+      seasonHTML += `</tbody></table></div>`;
 
-      let textHTML = `
-        <strong>Yearly (Min/Max/Avg)</strong><br>${tableYearly}
-        <hr><strong>Seasonal (Min/Max/Avg)</strong><br>${tableSeason}
-      `;
-
+      // 3 Tabs: Yearly, Seasonal, Graph
       return `
       <div style="width:300px;">
         <div class="tab-buttons">
           <div>
-            <button onclick="switchTab('text_${station.station_id}', 'chart_${station.station_id}')">Text</button>
-            <button onclick="switchTab('chart_${station.station_id}', 'text_${station.station_id}')">Graph</button>
+            <button onclick="switchAllTabs('${station.station_id}', 'yearly')">Yearly</button>
+            <button onclick="switchAllTabs('${station.station_id}', 'season')">Seasonal</button>
+            <button onclick="switchAllTabs('${station.station_id}', 'graph')">Graph</button>
           </div>
           <button class="popup-closebtn" onclick="closeMarkerPopup()">X</button>
         </div>
-        <div id="text_${station.station_id}" class="tab-content active">
-          ${textHTML}
+
+        <!-- YEARLY TAB -->
+        <div id="yearly_${station.station_id}" class="tab-content active">
+          <h4>Yearly Data</h4>
+          ${yearlyHTML}
         </div>
-        <div id="chart_${station.station_id}" class="tab-content">
+
+        <!-- SEASONAL TAB -->
+        <div id="season_${station.station_id}" class="tab-content">
+          <h4>Seasonal Data</h4>
+          ${seasonHTML}
+        </div>
+
+        <!-- GRAPH TAB -->
+        <div id="graph_${station.station_id}" class="tab-content">
           <canvas id="canvas_${station.station_id}" width="280" height="160" style="border:1px solid #ccc;"></canvas>
         </div>
       </div>`;
     }
 
-    function switchTab(showId, hideId) {
-      document.getElementById(showId).classList.add("active");
-      document.getElementById(hideId).classList.remove("active");
+    // Schaltet 3 Tabs: "yearly", "season", "graph"
+    function switchAllTabs(stationId, target) {
+      let allTabs = [
+        `yearly_${stationId}`,
+        `season_${stationId}`,
+        `graph_${stationId}`
+      ];
+      allTabs.forEach(id => {
+        document.getElementById(id).classList.remove("active");
+      });
+      document.getElementById(`${target}_${stationId}`).classList.add("active");
     }
 
     function closeMarkerPopup() {
@@ -524,12 +552,14 @@
       });
     }
 
-    // BOUNDING BOX
+    // =========== BOUNDING BOX =========== 
     map.on("moveend", () => {
-      if (!radiusActive) {
+      // Nur refresh, wenn kein Radius aktiv + kein offenes Popup
+      if (!radiusActive && (!selectedMarker || !selectedMarker._popup || !selectedMarker._popup.isOpen())) {
         handleMapMove();
       }
     });
+
     function handleMapMove() {
       showLoading();
       var bounds = map.getBounds();
@@ -551,7 +581,7 @@
         .finally(() => hideLoading());
     }
 
-    // RADIUS
+    // =========== RADIUS =========== 
     function updateRadius() {
       radiusKm = parseFloat(document.getElementById("radius").value);
       radiusActive = true;
@@ -594,7 +624,11 @@
       if (currentCenterMarker) map.removeLayer(currentCenterMarker);
       currentRadiusCircle = null;
       currentCenterMarker = null;
-      handleMapMove();
+
+      // bounding box if no popup
+      if (!selectedMarker || !selectedMarker._popup || !selectedMarker._popup.isOpen()) {
+        handleMapMove();
+      }
     }
 
     // HAVERSINE
@@ -619,7 +653,7 @@
         alert("Bitte gültige Werte für Lat/Lng eingeben!");
         return;
       }
-      removeRadius();
+      removeRadius(); 
       radiusActive = true;
 
       showLoading();
