@@ -14,7 +14,7 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 
-  <!-- Chart.js via CDN -->
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
@@ -267,7 +267,7 @@
   </div>
 
   <script>
-    // LEAFLET
+    // ========== LEAFLET ==========
     var map = L.map("map").setView([51.505, -0.09], 5);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 18,
@@ -642,7 +642,7 @@
       return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     }
 
-    // KOORDINATEN-SUCHE
+    // =========== KOORDINATEN-SUCHE + ZOOM / RADIUS =========== 
     function searchByCoordinates() {
       var lat = parseFloat(document.getElementById("searchLat").value);
       var lng = parseFloat(document.getElementById("searchLng").value);
@@ -667,13 +667,44 @@
           currentTableData = data;
           populateStationTable(data);
           showStationsOnMap(data);
+
+          // => Zoom zur Koordinate, z.B. Level 9
+          map.setView([lat, lng], 9);
+
+          // => Zeichne Radius + roten Marker
           drawRadiusOnMap(lat, lng);
+
         })
         .catch(err => {
           console.error("searchByCoordinates Fehler:", err);
           alert("Fehler bei Koord-Suche (siehe Konsole).");
         })
         .finally(() => hideLoading());
+    }
+
+    // Sorgt für Kreis + roter Punkt
+    function drawRadiusOnMap(centerLat, centerLng) {
+      // Falls schon existiert -> entfernen
+      if (currentRadiusCircle) {
+        map.removeLayer(currentRadiusCircle);
+      }
+      if (currentCenterMarker) {
+        map.removeLayer(currentCenterMarker);
+      }
+
+      currentRadiusCircle = L.circle([centerLat, centerLng], {
+        radius: radiusKm * 1000,
+        color: "blue",
+        fillColor: "#add8e6",
+        fillOpacity: 0.5
+      }).addTo(map);
+
+      currentCenterMarker = L.circleMarker([centerLat, centerLng], {
+        radius: 5,
+        color: "red",
+        fillColor: "red",
+        fillOpacity: 1
+      }).addTo(map);
     }
   </script>
 </body>
